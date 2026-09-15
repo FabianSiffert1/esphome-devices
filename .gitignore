@@ -1,1 +1,4 @@
 secrets.yaml
+.esphome/
+*.bin
+
