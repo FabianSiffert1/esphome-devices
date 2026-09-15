@@ -1,0 +1,126 @@
+esphome:
+  name: helios-01
+  friendly_name: HELIOS-01
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+
+api:
+  encryption:
+    key: !secret helios_01_api_key
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: HELIOS-01 Fallback Hotspot
+
+captive_portal:
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_clock
+    size: 72
+  - file: "gfonts://Roboto"
+    id: font_med
+    size: 28
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 20
+    glyphs: " !%'()+,-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz°"
+  # Material Design Icons. Roboto has no emoji glyphs, so the alarm symbol
+  # comes from here. F0020 is mdi:alarm.
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: font_icon
+    size: 32
+    glyphs: ["\U000F0020"]
+
+color:
+  - id: col_white
+    hex: FFFFFF
+  - id: col_dim
+    hex: 808080
+  - id: col_amber
+    hex: FFB000
+
+sensor:
+  - platform: homeassistant
+    id: ha_temp
+    entity_id: sensor.wohnzimmer_temperature
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_alarm_time
+    entity_id: input_datetime.sunrise_alarm
+
+binary_sensor:
+  - platform: homeassistant
+    id: ha_alarm_on
+    entity_id: input_boolean.alarm_enabled
+
+spi:
+  - id: lcd_bus
+    type: octal
+    clk_pin: GPIO11
+    data_pins: [GPIO4, GPIO5, GPIO6, GPIO7, GPIO15, GPIO16, GPIO9, GPIO10]
+
+display:
+  - platform: mipi_spi
+    model: ili9341
+    spi_id: lcd_bus
+    bus_mode: octal
+    data_rate: 20MHz
+    dc_pin: GPIO12
+    cs_pin: GPIO13
+    reset_pin: GPIO14
+    update_interval: 1s
+    # dimensions describes the surface AFTER transform, hence 320 x 240.
+    dimensions:
+      width: 320
+      height: 240
+      offset_width: 0
+      offset_height: 0
+    transform:
+      swap_xy: true
+      mirror_x: false
+      mirror_y: false
+    lambda: |-
+      it.fill(Color::BLACK);
+
+      auto now = id(ha_time).now();
+      if (now.is_valid()) {
+        it.strftime(200, 15, id(font_clock), id(col_white),
+                    TextAlign::TOP_RIGHT, "%H:%M", now);
+        it.strftime(208, 55, id(font_med), id(col_dim),
+                    TextAlign::TOP_LEFT, "%S", now);
+      }
+
+      // Alarm row: icon plus HH:MM, only when the alarm is armed.
+      if (id(ha_alarm_on).state && id(ha_alarm_time).has_state()) {
+        it.print(110, 145, id(font_icon), id(col_amber),
+                 TextAlign::TOP_LEFT, "\U000F0020");
+        it.print(152, 145, id(font_med), id(col_amber), TextAlign::TOP_LEFT,
+                 id(ha_alarm_time).state.substr(0, 5).c_str());
+      }
+
+      if (id(ha_temp).has_state()) {
+        it.printf(160, 200, id(font_small), id(col_dim),
+                  TextAlign::TOP_CENTER, "%.1f °C", id(ha_temp).state);
+      }
