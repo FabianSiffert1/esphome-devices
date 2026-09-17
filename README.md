@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="diySunriseAlarmFirstSteps.png" width="300" height="300">
+  <img src="diySunriseAlarmFirstSteps.png" width="450" height="450">
 </p>
 
 # HELIOS-01
