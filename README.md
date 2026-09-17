@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="diySunriseAlarmFirstSteps.png" width="300" height="300">
+</p>
+
 # HELIOS-01
 
 Sunrise alarm clock. ESP32-S3 with a 2.4" parallel TFT, talking to Home Assistant
