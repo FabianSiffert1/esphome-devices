@@ -78,7 +78,7 @@ reseated or a wider breadboard.
 ---
 
 <p align="center">
-  <img src="micro_boy_300/micro_boy_300.jpg" width="450" height="450">
+  <img src="micro_boy_300/micro_boy_300.jpg" width="300" height="450">
 </p>
 
 # Micro-Boy 300
