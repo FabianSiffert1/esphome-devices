@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="diySunriseAlarmFirstSteps.png" width="450" height="450">
+  <img src="helios_01/firstSteps.png" width="450" height="450">
 </p>
 
 # HELIOS-01
@@ -78,7 +78,7 @@ reseated or a wider breadboard.
 ---
 
 <p align="center">
-  <img src="microBoy300FirstSteps.png" width="450" height="450">
+  <img src="micro_boy_300/micro_boy_300.jpg" width="450" height="450">
 </p>
 
 # Micro-Boy 300
