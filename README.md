@@ -58,7 +58,9 @@ configure per-entity beyond adopting the device.
 ## Setup
 
 `secrets.yaml` is gitignored. Copy `secrets.yaml.example` and fill in WiFi
-credentials and an API key (`openssl rand -base64 32`).
+credentials, an API key (`openssl rand -base64 32`) and an OTA password. Keys and
+passwords are per device (`helios_01_api_key`, `helios_01_ota_password`); only the
+WiFi credentials are shared.
 
 ## Roadmap
 
@@ -67,8 +69,68 @@ credentials and an API key (`openssl rand -base64 32`).
 3. Rotary encoder setting a number
 4. MAX98357A + speaker
 5. Alarm scheduling — weekday rules, skip-next, extra-tomorrow
-6. Standalone I2S mic for HA voice
+6. Standalone I2S mic for HA voice (prototyped in the Micro-Boy 300, see below)
 7. HA / Spotify HUD screen
 
 Most remaining GPIOs are on the buried side of the board, so steps 2–4 need it
 reseated or a wider breadboard.
+
+---
+
+<p align="center">
+  <img src="microBoy300FirstSteps.png" width="450" height="450">
+</p>
+
+# Micro-Boy 300
+
+Voice satellite for Home Assistant Assist, headed for the case of a Grundig Micro
+Boy 300 pocket radio (8 × 6 × 2.5 cm). The wake word runs on the device; speech
+recognition and speech output run locally on the server.
+
+**Status: work in progress.** Wake word, voice commands and the LED status indicator
+work on the breadboard. No audio output yet.
+
+## How it works
+
+The ESP listens for the wake word ("Hey Beepoh", with "Okay Nabu" as backup) using
+microWakeWord, then streams audio to HA. The pipeline uses Speech-to-Phrase for
+speech-to-text and Piper for the reply, both as a Docker stack in `~/docker/voice`.
+LEDs and OLED follow the pipeline state: blue pulse while listening, purple while
+thinking, green while replying, red on errors.
+
+## Hardware
+
+- ESP32-S3 DevKitC-1 (N16R8) for the breadboard phase; Seeed XIAO ESP32S3 planned
+  for the final build
+- INMP441 I2S MEMS microphone
+- 0.91" SSD1306 OLED, 128 x 32, I2C
+- WS2812 ECO strip, 7 LEDs
+- Planned: MAX98357A + QUARKZMAN 3 W / 4 Ω speaker (44 × 31 × 15 mm), USB-C breakout
+
+| Part | Pins |
+|---|---|
+| INMP441 | WS GPIO4, SCK GPIO5, SD GPIO6, L/R to GND |
+| MAX98357A | LRC GPIO7, BCLK GPIO15, DIN GPIO16 |
+| OLED | SDA GPIO8, SCL GPIO9 |
+| WS2812 | DIN GPIO21 via 330 Ω |
+| Push-to-talk | GPIO0 (onboard BOOT button) |
+
+## Gotchas
+
+- **Unsoldered headers fail silently.** The INMP441 shipped with loose pins; pressed
+  in, the mic delivered pure silence and no error. Solder every header.
+- **Speech-to-Phrase, not Whisper.** The server's i3-5010U is too slow for Whisper in
+  German. Speech-to-Phrase only knows exposed entities — restart the container after
+  exposing or renaming anything.
+- **The wake word dropdown in HA shows "unavailable"** (probably the nightly build).
+  The first model in the list is active by default, so Hey Beepoh goes first.
+- **Debug recordings are public.** `debug_recording_dir` under `/config/www` is served
+  under `/local/` without auth. Delete the files and remove the option after
+  debugging.
+- **LED 0 is skipped** in the breadboard phase — it sits too close to the strip's plug.
+  Final build: `num_leds: 7`, partition `from: 0` to `to: 6`.
+
+## Setup
+
+Uses the same shared `secrets.yaml` with its own entries: `micro_boy_300_api_key`
+and `micro_boy_300_ota_password`.
