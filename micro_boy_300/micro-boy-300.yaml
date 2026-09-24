@@ -1,0 +1,225 @@
+substitutions:
+  name: micro-boy-300
+  friendly_name: "Micro-Boy 300"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2025.5.0
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: update_status
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+
+api:
+  encryption:
+    key: !secret micro_boy_300_api_key
+  on_client_connected:
+    - micro_wake_word.start:
+  on_client_disconnected:
+    - voice_assistant.stop:
+    - micro_wake_word.stop:
+
+ota:
+  - platform: esphome
+    password: !secret micro_boy_300_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Micro-Boy 300 Fallback"
+
+captive_portal:
+
+# 0 = bereit, 1 = hoert zu, 2 = denkt nach, 3 = antwortet, 4 = Fehler
+globals:
+  - id: va_state
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+# ---------- Audio ----------
+i2s_audio:
+  - id: i2s_mic_bus
+    i2s_lrclk_pin: GPIO4
+    i2s_bclk_pin: GPIO5
+  - id: i2s_spk_bus
+    i2s_lrclk_pin: GPIO7
+    i2s_bclk_pin: GPIO15
+
+microphone:
+  - platform: i2s_audio
+    id: mic
+    i2s_audio_id: i2s_mic_bus
+    i2s_din_pin: GPIO6
+    adc_type: external
+    pdm: false
+    bits_per_sample: 32bit
+    channel: left
+    sample_rate: 16000
+
+speaker:
+  - platform: i2s_audio
+    id: spk
+    i2s_audio_id: i2s_spk_bus
+    i2s_dout_pin: GPIO16
+    dac_type: external
+    channel: mono
+
+micro_wake_word:
+  id: mww
+  microphone:
+    microphone: mic
+    gain_factor: 4
+  models:
+    - model: okay_nabu
+      id: okay_nabu
+    - model: https://microwakeword.com/api/models/31/manifest.json
+      id: hey_beepoh
+  on_wake_word_detected:
+    - voice_assistant.start:
+        wake_word: !lambda return wake_word;
+
+voice_assistant:
+  id: va
+  microphone: mic
+  micro_wake_word: mww
+  speaker: spk
+  noise_suppression_level: 2
+  auto_gain: 31dBFS
+  volume_multiplier: 2.0
+  on_listening:
+    - globals.set: { id: va_state, value: "1" }
+    - script.execute: update_status
+  on_stt_vad_end:
+    - globals.set: { id: va_state, value: "2" }
+    - script.execute: update_status
+  on_tts_start:
+    - globals.set: { id: va_state, value: "3" }
+    - script.execute: update_status
+  on_end:
+    - wait_until:
+        not:
+          voice_assistant.is_running:
+    - if:
+        condition:
+          lambda: return id(va_state) != 4;
+        then:
+          - globals.set: { id: va_state, value: "0" }
+          - script.execute: update_status
+    - micro_wake_word.start:
+  on_error:
+    - globals.set: { id: va_state, value: "4" }
+    - script.execute: update_status
+    - delay: 3s
+    - globals.set: { id: va_state, value: "0" }
+    - script.execute: update_status
+
+# ---------- BOOT-Taste = Push-to-Talk ----------
+binary_sensor:
+  - platform: gpio
+    name: "Taste"
+    pin:
+      number: GPIO0
+      inverted: true
+      mode: input_pullup
+      ignore_strapping_warning: true
+    on_click:
+      - if:
+          condition: voice_assistant.is_running
+          then:
+            - voice_assistant.stop:
+          else:
+            - voice_assistant.start:
+
+# ---------- OLED ----------
+i2c:
+  sda: GPIO8
+  scl: GPIO9
+  frequency: 400kHz
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_big
+    size: 16
+    glyphs: ' !"()+,-./0123456789:?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß'
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 12
+    glyphs: ' !"()+,-./0123456789:?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß'
+
+display:
+  - platform: ssd1306_i2c
+    id: oled
+    model: "SSD1306 128x32"
+    address: 0x3C
+    update_interval: 1s
+    lambda: |-
+      switch (id(va_state)) {
+        case 1: it.print(64, 16, id(font_big), TextAlign::CENTER, "Ich höre zu"); break;
+        case 2: it.print(64, 16, id(font_big), TextAlign::CENTER, "Denke nach..."); break;
+        case 3: it.print(64, 16, id(font_big), TextAlign::CENTER, "Antworte..."); break;
+        case 4: it.print(64, 16, id(font_big), TextAlign::CENTER, "Fehler"); break;
+        default: it.print(64, 16, id(font_small), TextAlign::CENTER, "Sag \"Okay Nabu\""); break;
+      }
+
+# ---------- LED-Pixel ----------
+light:
+  # Physical strip: 8 LEDs. LED 0 sits under the plug and stays dark
+  # (breadboard phase only). Final build: num_leds 7, partition from 0 to 6.
+  - platform: esp32_rmt_led_strip
+    id: leds_raw
+    internal: true
+    pin: GPIO21
+    num_leds: 8
+    chipset: ws2812
+    rgb_order: GRB
+
+  - platform: partition
+    id: leds
+    name: "Status LEDs"
+    default_transition_length: 0.3s
+    segments:
+      - id: leds_raw
+        from: 1
+        to: 7
+    effects:
+      - pulse:
+          name: "Pulse"
+          transition_length: 0.6s
+          update_interval: 0.6s
+          min_brightness: 20%
+          max_brightness: 70%
+
+script:
+  - id: update_status
+    mode: restart
+    then:
+      - component.update: oled
+      - lambda: |-
+          auto call = id(leds).turn_on();
+          call.set_brightness(0.5);
+          switch (id(va_state)) {
+            case 1: call.set_rgb(0.0, 0.3, 1.0); call.set_effect("Pulse"); break;
+            case 2: call.set_rgb(0.6, 0.0, 1.0); call.set_effect("None"); break;
+            case 3: call.set_rgb(0.0, 1.0, 0.2); call.set_effect("None"); break;
+            case 4: call.set_rgb(1.0, 0.0, 0.0); call.set_effect("None"); break;
+            default: id(leds).turn_off().perform(); return;
+          }
+          call.perform();
