@@ -59,6 +59,19 @@ globals:
     type: int
     restore_value: no
     initial_value: "0"
+  # Animationswerte fuer das OLED-Gesicht (vom interval berechnet)
+  - id: face_x
+    type: int
+    initial_value: "0"
+  - id: face_y
+    type: int
+    initial_value: "0"
+  - id: face_h
+    type: int
+    initial_value: "20"
+  - id: face_sleep
+    type: bool
+    initial_value: "false"
 
 # ---------- Audio ----------
 i2s_audio:
@@ -189,6 +202,10 @@ binary_sensor:
                   - voice_assistant.start:
 
 # ---------- OLED-Gesicht ----------
+# Das Display wird nur neu gezeichnet, wenn sich das Bild wirklich aendert.
+# Jede Uebertragung erzeugt eine kleine Stoerung im Mikrofon, deshalb:
+# - Zuhoeren (Zustand 1) ist ein stehendes Bild -> keine Uebertragungen
+# - Bereit: nur beim Blinzeln und Umschauen
 i2c:
   sda: GPIO8
   scl: GPIO9
@@ -199,26 +216,12 @@ display:
     id: oled
     model: "SSD1306 128x32"
     address: 0x3C
-    update_interval: 100ms
+    update_interval: never
     lambda: |-
-      const uint32_t now = millis();
+      if (id(face_sleep)) return;  // Display dunkel
+
       const int state = id(va_state);
-
-      // Zustand merken, damit Animationen bei jedem Wechsel neu starten
-      static int last_state = -1;
-      static uint32_t idle_since = 0;
-      static uint32_t next_blink = 0;
-      static uint32_t next_look = 0;
-      static int look_x = 0, look_y = 0;
-
-      if (state != last_state) {
-        last_state = state;
-        idle_since = now;
-        look_x = 0;
-        look_y = 0;
-        next_blink = now + 2000 + random_uint32() % 3000;
-        next_look = now + 3000;
-      }
+      const int fx = id(face_x), fy = id(face_y), fh = id(face_h);
 
       // Gefuelltes Rechteck mit runden Ecken
       auto rrect = [&](int x, int y, int w, int h, int r) {
@@ -241,26 +244,21 @@ display:
       const int LX = 40, RX = 88, CY = 16;
 
       switch (state) {
-        case 1: {  // hoert zu: grosse, offene Augen
+        case 1:  // hoert zu: grosse, offene Augen
           eye(LX, CY, 28, 26);
           eye(RX, CY, 28, 26);
           break;
-        }
-        case 2: {  // denkt nach: Blick nach oben, wandert hin und her
-          int dx = ((now / 700) % 2) ? 10 : -10;
-          eye(LX + dx, CY - 5, 22, 14);
-          eye(RX + dx, CY - 5, 22, 14);
+        case 2:  // denkt nach: Blick nach oben, wandert hin und her
+          eye(LX + fx, CY - 5, 22, 14);
+          eye(RX + fx, CY - 5, 22, 14);
           break;
-        }
-        case 3: {  // antwortet: froehliche Boegen, leicht wippend
-          int b = ((now / 200) % 2) ? 1 : 0;
+        case 3:  // antwortet: froehliche Boegen, leicht wippend
           for (int cx : {LX, RX}) {
-            it.filled_circle(cx, CY + b, 12);
-            it.filled_circle(cx, CY + 6 + b, 12, COLOR_OFF);
+            it.filled_circle(cx, CY + fy, 12);
+            it.filled_circle(cx, CY + 6 + fy, 12, COLOR_OFF);
           }
           break;
-        }
-        case 4: {  // Fehler: X-Augen
+        case 4:  // Fehler: X-Augen
           for (int cx : {LX, RX}) {
             for (int d = -1; d <= 1; d++) {
               it.line(cx - 8 + d, CY - 8, cx + 8 + d, CY + 8);
@@ -268,34 +266,81 @@ display:
             }
           }
           break;
-        }
-        case 5: {  // stumm: geschlossene Augen
+        case 5:  // stumm: geschlossene Augen
           it.filled_rectangle(LX - 12, CY - 1, 24, 3);
           it.filled_rectangle(RX - 12, CY - 1, 24, 3);
           break;
-        }
-        default: {  // bereit: blinzeln und ab und zu umschauen
-          // Nach 10 Minuten ohne Aktivitaet schlafen (Display dunkel, gegen Einbrennen)
-          if (now - idle_since > 10UL * 60UL * 1000UL) break;
-
-          if (now >= next_look) {
-            int r = random_uint32() % 5;
-            look_x = (r == 1) ? -8 : (r == 2) ? 8 : 0;
-            look_y = (r == 3) ? -3 : 0;
-            next_look = now + 2500 + random_uint32() % 4000;
-          }
-
-          int h = 20;
-          if (now >= next_blink) {
-            if (now < next_blink + 150) h = 2;
-            else next_blink = now + 2500 + random_uint32() % 4000;
-          }
-
-          eye(LX + look_x, CY + look_y, 24, h);
-          eye(RX + look_x, CY + look_y, 24, h);
+        default:  // bereit: blinzeln und umschauen
+          eye(LX + fx, CY + fy, 24, fh);
+          eye(RX + fx, CY + fy, 24, fh);
           break;
-        }
       }
+
+# Berechnet die Animation und loest nur bei Aenderung ein Neuzeichnen aus
+interval:
+  - interval: 50ms
+    then:
+      - lambda: |-
+          const uint32_t now = millis();
+          const int state = id(va_state);
+
+          static int last_state = -1;
+          static uint32_t idle_since = 0, next_blink = 0, next_look = 0;
+          static int look_x = 0, look_y = 0;
+          static int last_sig = -1;
+
+          if (state != last_state) {
+            last_state = state;
+            idle_since = now;
+            look_x = 0;
+            look_y = 0;
+            next_blink = now + 2000 + random_uint32() % 3000;
+            next_look = now + 3000;
+          }
+
+          int x = 0, y = 0, h = 20;
+          bool sleep = false;
+
+          switch (state) {
+            case 2:
+              x = ((now / 700) % 2) ? 10 : -10;
+              break;
+            case 3:
+              y = ((now / 400) % 2) ? 1 : 0;
+              break;
+            case 1:
+            case 4:
+            case 5:
+              break;
+            default:
+              // Nach 15 s ohne Aktivitaet schlafen (gegen Einbrennen)
+              if (now - idle_since > 15UL * 1000UL) { sleep = true; break; }
+              if (now >= next_look) {
+                int r = random_uint32() % 5;
+                look_x = (r == 1) ? -8 : (r == 2) ? 8 : 0;
+                look_y = (r == 3) ? -3 : 0;
+                next_look = now + 2500 + random_uint32() % 4000;
+              }
+              if (now >= next_blink) {
+                if (now < next_blink + 150) h = 2;
+                else next_blink = now + 2500 + random_uint32() % 4000;
+              }
+              x = look_x;
+              y = look_y;
+              break;
+          }
+
+          id(face_x) = x;
+          id(face_y) = y;
+          id(face_h) = h;
+          id(face_sleep) = sleep;
+
+          // Nur neu zeichnen, wenn sich das Bild aendert
+          int sig = state * 1000000 + (x + 20) * 10000 + (y + 20) * 100 + h + (sleep ? 50 : 0);
+          if (sig != last_sig) {
+            last_sig = sig;
+            id(oled).update();
+          }
 
 # ---------- LED-Pixel ----------
 light:
@@ -329,7 +374,6 @@ script:
   - id: update_status
     mode: restart
     then:
-      - component.update: oled
       - lambda: |-
           auto call = id(leds).turn_on();
           call.set_brightness(0.5);
