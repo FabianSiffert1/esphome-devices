@@ -76,13 +76,20 @@ Most remaining GPIOs are on the buried side of the board, so steps 2–4 need it
 reseated or a wider breadboard.
 
 ---
-
+# Micro-Boy 300
 <p align="center">
-  <img src="micro_boy_300/micro_boy_300.jpg" width="300" height="450">
+  <img src="micro_boy_300/docs/micro_boy_300.jpg" width="300" height="450">
 </p>
 
-# Micro-Boy 300
+## OpenSCAD Prototype 1
+<p align="center">
+  <img src="micro_boy_300/docs/prototype1front.png" width="20%" height="20%">
+ <img src="micro_boy_300/docs/prototype1back.png" width="20%" height="20%">
+</p>
 
+
+
+## Introduction
 Voice satellite for Home Assistant Assist, headed for the case of a Grundig Micro
 Boy 300 pocket radio (8 × 6 × 2.5 cm). The wake word runs on the device; speech
 recognition and speech output run locally on the server.
