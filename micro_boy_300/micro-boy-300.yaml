@@ -32,11 +32,7 @@ api:
   encryption:
     key: !secret micro_boy_300_api_key
   on_client_connected:
-    - if:
-        condition:
-          binary_sensor.is_off: mic_mute
-        then:
-          - micro_wake_word.start:
+    - script.execute: start_wake_word
   on_client_disconnected:
     - voice_assistant.stop:
     - micro_wake_word.stop:
@@ -54,7 +50,7 @@ wifi:
 captive_portal:
 
 # 0 = bereit, 1 = hoert zu, 2 = denkt nach, 3 = antwortet, 4 = Fehler, 5 = stumm,
-# 6 = nicht verstanden
+# 6 = nicht verstanden, 7 = Wake Word aus (schlafende Augen, 3 s)
 globals:
   - id: va_state
     type: int
@@ -71,6 +67,10 @@ globals:
     type: int
     initial_value: "20"
   - id: face_sleep
+    type: bool
+    initial_value: "false"
+  # true = nach dem naechsten Zustandswechsel sofort dunkel statt 15 s warten
+  - id: face_skip_idle
     type: bool
     initial_value: "false"
 
@@ -157,7 +157,7 @@ voice_assistant:
               then:
                 - globals.set: { id: va_state, value: "0" }
                 - script.execute: update_status
-          - micro_wake_word.start:
+          - script.execute: start_wake_word
   on_error:
     - globals.set: { id: va_state, value: "4" }
     - script.execute: update_status
@@ -186,7 +186,31 @@ binary_sensor:
     on_release:
       - globals.set: { id: va_state, value: "0" }
       - script.execute: update_status
-      - micro_wake_word.start:
+      - script.execute: start_wake_word
+
+  # Schiebeschalter: Mitte an GPIO12, ein Aussenpin an GND
+  # an = Wake Word aktiv, aus = nur Push-to-Talk
+  - platform: gpio
+    id: wake_switch
+    name: "Wake Word aktiv"
+    pin:
+      number: GPIO12
+      mode: input_pullup
+      inverted: true
+    filters:
+      - delayed_on_off: 50ms
+    on_press:
+      - script.stop: show_wake_off
+      - if:
+          condition:
+            lambda: return id(va_state) == 7;
+          then:
+            - globals.set: { id: va_state, value: "0" }
+            - script.execute: update_status
+      - script.execute: start_wake_word
+    on_release:
+      - micro_wake_word.stop:
+      - script.execute: show_wake_off
 
   # Taster: ein Bein an GPIO11, das andere an GND = Push-to-Talk
   - platform: gpio
@@ -211,9 +235,8 @@ binary_sensor:
 
 # ---------- OLED-Gesicht ----------
 # Das Display wird nur neu gezeichnet, wenn sich das Bild wirklich aendert.
-# Jede Uebertragung erzeugt eine kleine Stoerung im Mikrofon, deshalb:
-# - Zuhoeren (Zustand 1) ist ein stehendes Bild -> keine Uebertragungen
-# - Bereit: nur beim Blinzeln und Umschauen
+# Zuhoeren: Augen "atmen" im 0,6-s-Takt (passend zum LED-Pulsieren).
+# Test offen: Kommt das Brummen zurueck, zuerst contrast wieder auf 30 %.
 i2c:
   sda: GPIO8
   scl: GPIO9
@@ -224,7 +247,7 @@ display:
     id: oled
     model: "SSD1306 128x32"
     address: 0x3C
-    contrast: 30%
+    contrast: 100%
     update_interval: never
     lambda: |-
       if (id(face_sleep)) return;  // Display dunkel
@@ -253,9 +276,9 @@ display:
       const int LX = 40, RX = 88, CY = 16;
 
       switch (state) {
-        case 1:  // hoert zu: grosse, offene Augen
-          eye(LX, CY, 28, 26);
-          eye(RX, CY, 28, 26);
+        case 1:  // hoert zu: grosse, offene Augen, atmen leicht
+          eye(LX, CY, 28, fh);
+          eye(RX, CY, 28, fh);
           break;
         case 2:  // denkt nach: Blick nach oben, wandert hin und her
           eye(LX + fx, CY - 5, 22, 14);
@@ -283,6 +306,19 @@ display:
           eye(LX, CY, 24, 22);
           eye(RX, CY - 3, 16, 8);
           break;
+        case 7:  // Wake Word aus: schlafende Augen (Boegen) + "z"
+          for (int cx : {LX, RX}) {
+            it.circle(cx, CY - 4, 10);
+            it.circle(cx, CY - 4, 11);
+            it.filled_rectangle(cx - 12, CY - 16, 25, 16, COLOR_OFF);
+          }
+          it.line(112, 2, 118, 2);
+          it.line(118, 2, 112, 8);
+          it.line(112, 8, 118, 8);
+          it.line(104, 11, 108, 11);
+          it.line(108, 11, 104, 15);
+          it.line(104, 15, 108, 15);
+          break;
         default:  // bereit: blinzeln und umschauen
           eye(LX + fx, CY + fy, 24, fh);
           eye(RX + fx, CY + fy, 24, fh);
@@ -309,6 +345,10 @@ interval:
             look_y = 0;
             next_blink = now + 2000 + random_uint32() % 3000;
             next_look = now + 3000;
+            if (id(face_skip_idle)) {
+              idle_since = now - 16000;
+              id(face_skip_idle) = false;
+            }
           }
 
           int x = 0, y = 0, h = 20;
@@ -318,17 +358,20 @@ interval:
             case 2:
               x = ((now / 700) % 2) ? 10 : -10;
               break;
+            case 1:
+              h = ((now / 600) % 2) ? 26 : 22;
+              break;
             case 3:
               y = ((now / 400) % 2) ? 1 : 0;
               break;
-            case 1:
             case 4:
             case 5:
             case 6:
+            case 7:
               break;
             default:
-              // Nach 15 s ohne Aktivitaet schlafen (gegen Einbrennen)
-              if (now - idle_since > 15UL * 1000UL) { sleep = true; break; }
+              // Nach 10 s ohne Aktivitaet schlafen (gegen Einbrennen)
+              if (now - idle_since > 10UL * 1000UL) { sleep = true; break; }
               if (now >= next_look) {
                 int r = random_uint32() % 5;
                 look_x = (r == 1) ? -8 : (r == 2) ? 8 : 0;
@@ -367,6 +410,7 @@ light:
     num_leds: 8
     chipset: ws2812
     channel_colors: GRB
+    color_correct: [40%, 40%, 40%]
 
   - platform: partition
     id: leds
@@ -401,3 +445,38 @@ script:
             default: id(leds).turn_off().perform(); return;
           }
           call.perform();
+
+  # Wake Word per Schalter aus: 3 s schlafende Augen, dann Display dunkel.
+  # Nur aus dem Zustand "bereit", damit laufende Anfragen nicht gestoert werden.
+  - id: show_wake_off
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: return id(va_state) == 0;
+          then:
+            - globals.set: { id: va_state, value: "7" }
+            - script.execute: update_status
+            - delay: 3s
+            - if:
+                condition:
+                  lambda: return id(va_state) == 7;
+                then:
+                  - globals.set: { id: face_skip_idle, value: "true" }
+                  - globals.set: { id: va_state, value: "0" }
+                  - script.execute: update_status
+
+  # Startet das Wake Word nur, wenn alles passt:
+  # HA verbunden, nicht stumm, Wake-Word-Schalter an, keine laufende Anfrage
+  - id: start_wake_word
+    then:
+      - if:
+          condition:
+            and:
+              - api.connected:
+              - binary_sensor.is_off: mic_mute
+              - binary_sensor.is_on: wake_switch
+              - not:
+                  voice_assistant.is_running:
+          then:
+            - micro_wake_word.start:
