@@ -5,7 +5,7 @@ substitutions:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2025.5.0
+  min_version: 2026.9.0
   on_boot:
     priority: -100
     then:
@@ -43,7 +43,7 @@ api:
 
 ota:
   - platform: esphome
-    password: !secret micro_boy_300_ota_password
+    encryption:
 
 wifi:
   ssid: !secret wifi_ssid
@@ -53,7 +53,8 @@ wifi:
 
 captive_portal:
 
-# 0 = bereit, 1 = hoert zu, 2 = denkt nach, 3 = antwortet, 4 = Fehler, 5 = stumm
+# 0 = bereit, 1 = hoert zu, 2 = denkt nach, 3 = antwortet, 4 = Fehler, 5 = stumm,
+# 6 = nicht verstanden
 globals:
   - id: va_state
     type: int
@@ -100,12 +101,14 @@ speaker:
     i2s_dout_pin: GPIO16
     dac_type: external
     channel: mono
+    buffer_duration: 1s   # mehr Puffer fuer stockende TTS-Streams
+    timeout: 2s           # Pausen zwischen Saetzen ueberbruecken
 
 micro_wake_word:
   id: mww
   microphone:
     microphone: mic
-    gain_factor: 4
+    gain_factor: 1
   models:
     - model: https://microwakeword.com/api/models/31/manifest.json
       id: hey_beepoh
@@ -122,7 +125,7 @@ voice_assistant:
   speaker: spk
   noise_suppression_level: 2
   auto_gain: 31dBFS
-  volume_multiplier: 2.0
+  volume_multiplier: 1.0
   on_listening:
     - globals.set: { id: va_state, value: "1" }
     - script.execute: update_status
@@ -130,7 +133,12 @@ voice_assistant:
     - globals.set: { id: va_state, value: "2" }
     - script.execute: update_status
   on_tts_start:
-    - globals.set: { id: va_state, value: "3" }
+    # HA-Antworten wie "Entschuldigung, das habe ich nicht verstanden" sind
+    # normale TTS-Antworten, kein on_error. Deshalb am Text erkennen.
+    - lambda: |-
+        bool fail = x.find("Entschuldigung") != std::string::npos ||
+                    x.find("nicht verstanden") != std::string::npos;
+        id(va_state) = fail ? 6 : 3;
     - script.execute: update_status
   on_end:
     - wait_until:
@@ -216,6 +224,7 @@ display:
     id: oled
     model: "SSD1306 128x32"
     address: 0x3C
+    contrast: 30%
     update_interval: never
     lambda: |-
       if (id(face_sleep)) return;  // Display dunkel
@@ -270,6 +279,10 @@ display:
           it.filled_rectangle(LX - 12, CY - 1, 24, 3);
           it.filled_rectangle(RX - 12, CY - 1, 24, 3);
           break;
+        case 6:  // nicht verstanden: verwirrt, ein Auge gross, eins klein
+          eye(LX, CY, 24, 22);
+          eye(RX, CY - 3, 16, 8);
+          break;
         default:  // bereit: blinzeln und umschauen
           eye(LX + fx, CY + fy, 24, fh);
           eye(RX + fx, CY + fy, 24, fh);
@@ -311,6 +324,7 @@ interval:
             case 1:
             case 4:
             case 5:
+            case 6:
               break;
             default:
               // Nach 15 s ohne Aktivitaet schlafen (gegen Einbrennen)
@@ -383,6 +397,7 @@ script:
             case 3: call.set_rgb(0.0, 1.0, 0.2); call.set_effect("None"); break;
             case 4: call.set_rgb(1.0, 0.0, 0.0); call.set_effect("None"); break;
             case 5: call.set_rgb(1.0, 0.0, 0.0); call.set_brightness(0.15); call.set_effect("None"); break;
+            case 6: call.set_rgb(1.0, 0.4, 0.0); call.set_effect("None"); break;
             default: id(leds).turn_off().perform(); return;
           }
           call.perform();
