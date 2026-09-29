@@ -94,43 +94,63 @@ Voice satellite for Home Assistant Assist, headed for the case of a Grundig Micr
 Boy 300 pocket radio (8 × 6 × 2.5 cm). The wake word runs on the device; speech
 recognition and speech output run locally on the server.
 
-**Status: work in progress.** Wake word, voice commands and the LED status indicator
-work on the breadboard. Amplifier, mute switch and push-to-talk button are next;
-no audio output yet.
+**Status: work in progress.** Wake word, voice commands, OLED face, LED status,
+mute switch, wake word switch and push-to-talk button all work on the breadboard.
+Mic hum is fixed. Amplifier is next; no audio output yet.
 
 ## How it works
 
 The ESP listens for the wake word ("Hey Beepoh", with "Okay Nabu" as backup) using
 microWakeWord, then streams audio to HA. The pipeline uses Speech-to-Phrase for
 speech-to-text and Piper for the reply, both as a Docker stack in `~/docker/voice`.
-The LEDs follow the pipeline state: blue pulse while listening, purple while
-thinking, green while replying, red on errors, dim red while muted, off when idle.
 
-A slide switch mutes the mic, a momentary button starts or stops a request without
-the wake word.
+A 0.91" OLED shows a face for each state: ready, listening, thinking, replying,
+error, muted, not understood. It redraws only when the image changes and goes dark
+after 10 s idle. The LEDs follow the same states: blue pulse while listening,
+purple while thinking, green while replying, red on errors, orange when not
+understood, dim red while muted, off when idle.
+
+Controls:
+
+- **Mute switch** silences the mic. Overrides everything, including the button.
+- **Wake word switch** turns the wake word off; requests then only start by button.
+  Switching it off shows sleeping eyes for 3 s.
+- **Push-to-talk button** starts or stops a request without the wake word.
 
 ## Hardware
 
 - ESP32-S3 DevKitC-1 (N16R8), both on the breadboard and in the final build — it
-  fits the case with the headers removed
+  fits the case with the headers removed. IN-OUT solder bridge closed so the 5V pin
+  carries USB power.
 - INMP441 I2S MEMS microphone
+- SSD1306 OLED, 0.91", 128 × 32, I2C
 - WS2812 ECO strip, 7 LEDs
-- Slide switch (mute), momentary button (push-to-talk)
+- 2 slide switches (mute, wake word), momentary button (push-to-talk)
 - Planned: MAX98357A + QUARKZMAN 3 W / 4 Ω speaker (44 × 31 × 15 mm), USB-C breakout
   with 5.1 kΩ CC resistors, 1N5819 Schottky diode
 
 | Part | Pins |
 |---|---|
-| INMP441 | WS GPIO4, SCK GPIO5, SD GPIO6, L/R to GND |
-| MAX98357A | LRC GPIO7, BCLK GPIO15, DIN GPIO16 |
-| WS2812 | DIN GPIO21 via 330 Ω |
+| INMP441 | VDD 3V3 and GND on their own pins, WS GPIO4, SCK GPIO5, SD GPIO6, L/R to GND |
+| OLED | VCC 3V3 and GND on other pins than the mic, SDA GPIO8, SCL GPIO9 |
+| MAX98357A | VIN 5V, LRC GPIO7, BCLK GPIO15, DIN GPIO16 |
+| WS2812 | 5V, DIN GPIO21 via 330 Ω |
 | Mute switch | GPIO10 to GND |
 | Push-to-talk | GPIO11 to GND |
+| Wake word switch | GPIO12 to GND |
+
+GPIO numbers refer to the board's silkscreen labels, not pin positions.
 
 ## Gotchas
 
 - **Unsoldered headers fail silently.** The INMP441 shipped with loose pins; pressed
   in, the mic delivered pure silence and no error. Solder every header.
+- **Mic and OLED must not share a supply.** The OLED draws pulsed current while
+  drawing, which shows up as hum in the mic. Give the mic its own 3V3 and GND pins.
+- **Flux ruins the mic.** Flux in the sound port made the first INMP441 sound muffled.
+  Tape the port before soldering.
+- **Testing on a laptop can add hum.** USB ground noise from a MacBook showed up in
+  recordings. Compare recordings on a phone charger.
 - **Speech-to-Phrase, not Whisper.** The server's i3-5010U is too slow for Whisper in
   German. Speech-to-Phrase only knows exposed entities — restart the container after
   exposing or renaming anything.
@@ -141,9 +161,9 @@ the wake word.
   debugging.
 - **Mute is software-only.** Cutting the mic's power doesn't reliably silence it —
   the I2S clocks partly power the chip through its pins.
-- **Two 5V sources need a diode.** With the board's USB and the USB-C breakout both
-  connected, a Schottky diode (cathode to the 5V rail) keeps the breakout from
-  back-feeding the PC.
+- **Two 5V sources need a diode.** With the IN-OUT bridge closed, the 5V pin is tied
+  to USB. Never connect a second 5V source there while USB is plugged in, unless a
+  Schottky diode (cathode to the 5V rail) blocks back-feeding.
 - **Write lambdas as block scalars.** `lambda: x ? 5 : 0;` on one line breaks YAML
   parsing — the ` : ` reads as a mapping. Use `lambda: |-` and put the code below.
 - **LED 0 is skipped** in the breadboard phase — it sits too close to the strip's plug.
@@ -151,5 +171,6 @@ the wake word.
 
 ## Setup
 
-Uses the same shared `secrets.yaml` with its own entries: `micro_boy_300_api_key`
-and `micro_boy_300_ota_password`.
+Uses the same shared `secrets.yaml` with its own entry: `micro_boy_300_api_key`.
+OTA is encrypted with the API key, so `micro_boy_300_ota_password` is no longer
+needed. 

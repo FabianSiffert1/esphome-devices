@@ -69,7 +69,7 @@ globals:
   - id: face_sleep
     type: bool
     initial_value: "false"
-  # true = nach dem naechsten Zustandswechsel sofort dunkel statt 15 s warten
+  # true = nach dem naechsten Zustandswechsel sofort dunkel statt 10 s warten
   - id: face_skip_idle
     type: bool
     initial_value: "false"
