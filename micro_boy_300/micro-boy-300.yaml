@@ -10,8 +10,17 @@ esphome:
     priority: -100
     then:
       - lambda: |-
+          id(oled).set_contrast(id(oled_contrast).state / 100.0f);
           id(va_state) = id(mic_mute).state ? 5 : 0;
       - script.execute: update_status
+      # Start mit ausgeschaltetem Wake Word: schlafende Augen statt wacher Augen
+      - if:
+          condition:
+            and:
+              - binary_sensor.is_off: mic_mute
+              - binary_sensor.is_off: wake_switch
+          then:
+            - script.execute: show_wake_off
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -73,6 +82,33 @@ globals:
   - id: face_skip_idle
     type: bool
     initial_value: "false"
+
+# ---------- Test-Hilfen (in HA unter "Konfiguration") ----------
+# Damit Kontrast und Zuhoer-Animation getrennt getestet werden koennen,
+# ohne neu zu flashen.
+switch:
+  - platform: template
+    id: listen_anim
+    name: "Zuhör-Animation"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+
+number:
+  - platform: template
+    id: oled_contrast
+    name: "OLED-Kontrast"
+    min_value: 10
+    max_value: 100
+    step: 10
+    unit_of_measurement: "%"
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    entity_category: config
+    set_action:
+      - lambda: |-
+          id(oled).set_contrast(x / 100.0f);
 
 # ---------- Audio ----------
 i2s_audio:
@@ -186,7 +222,14 @@ binary_sensor:
     on_release:
       - globals.set: { id: va_state, value: "0" }
       - script.execute: update_status
-      - script.execute: start_wake_word
+      # Wake Word per Schalter aus: schlafende Augen statt wacher Augen
+      - if:
+          condition:
+            binary_sensor.is_off: wake_switch
+          then:
+            - script.execute: show_wake_off
+          else:
+            - script.execute: start_wake_word
 
   # Schiebeschalter: Mitte an GPIO12, ein Aussenpin an GND
   # an = Wake Word aktiv, aus = nur Push-to-Talk
@@ -235,8 +278,9 @@ binary_sensor:
 
 # ---------- OLED-Gesicht ----------
 # Das Display wird nur neu gezeichnet, wenn sich das Bild wirklich aendert.
-# Zuhoeren: Augen "atmen" im 0,6-s-Takt (passend zum LED-Pulsieren).
-# Test offen: Kommt das Brummen zurueck, zuerst contrast wieder auf 30 %.
+# Zuhoeren: Augen "atmen" im 0,6-s-Takt (abschaltbar ueber "Zuhör-Animation").
+# Kontrast wird zur Laufzeit ueber "OLED-Kontrast" gesetzt (Standard 100 %).
+# Kommt das Brummen zurueck, zuerst den Kontrast wieder auf 30 %.
 i2c:
   sda: GPIO8
   scl: GPIO9
@@ -346,7 +390,7 @@ interval:
             next_blink = now + 2000 + random_uint32() % 3000;
             next_look = now + 3000;
             if (id(face_skip_idle)) {
-              idle_since = now - 16000;
+              idle_since = now - 16000;  // liegt sicher ueber der 10-s-Grenze
               id(face_skip_idle) = false;
             }
           }
@@ -359,7 +403,9 @@ interval:
               x = ((now / 700) % 2) ? 10 : -10;
               break;
             case 1:
-              h = ((now / 600) % 2) ? 26 : 22;
+              // Animation aus = stehendes Bild (kein Neuzeichnen beim Zuhoeren)
+              if (id(listen_anim).state) h = ((now / 600) % 2) ? 26 : 22;
+              else h = 24;
               break;
             case 3:
               y = ((now / 400) % 2) ? 1 : 0;
@@ -448,6 +494,7 @@ script:
 
   # Wake Word per Schalter aus: 3 s schlafende Augen, dann Display dunkel.
   # Nur aus dem Zustand "bereit", damit laufende Anfragen nicht gestoert werden.
+  # Wird auch beim Booten und nach "Stumm aus" genutzt, wenn der Schalter aus ist.
   - id: show_wake_off
     mode: restart
     then:
