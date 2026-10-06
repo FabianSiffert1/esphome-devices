@@ -672,17 +672,21 @@ module front_insert() {
             layer_outline(plate_z, plate_thickness);
             at(speaker_center) speaker_holder_body();
             at(oled_center)    oled_holder_body();
+            for (p = lower_boss_positions)
+                at(p) translate([0, 0, lower_boss_height])
+                    cylinder(d = lower_boss_outer_d, h = plate_z - lower_boss_height + 0.01);
         }
         shared_layer_cutouts(plate_z, plate_thickness);
+        for (p = lower_boss_positions)
+            at(p) translate([0, 0, lower_boss_height - 1])
+                cylinder(d = screw_clearance_d, h = plate_z - lower_boss_height + 2);
         for (p = alignment_pin_positions)
             at(p) translate([0, 0, -1]) cylinder(d = alignment_pin_clearance_d, h = plate_back_z + 2);
         // mittlere Fassung: vorerst nur Markierung zum Prüfen der Position
         translate([center_boss_position.x, center_boss_position.y, plate_z - 1])
             cylinder(d = center_boss_outer_d, h = plate_thickness + 2);
-        for (boss = concat([[center_boss_position, center_boss_outer_d, center_boss_height]],
-                           [for (p = lower_boss_positions) [p, lower_boss_outer_d, lower_boss_height]]))
-            translate([boss[0].x, boss[0].y, -1])
-                cylinder(d = boss[1] + 2 * wall_clearance, h = boss[2] + wall_clearance + 1);
+        translate([center_boss_position.x, center_boss_position.y, -1])
+            cylinder(d = center_boss_outer_d + 2 * wall_clearance, h = center_boss_height + wall_clearance + 1);
         at(speaker_center) speaker_holder_cutouts();
         at(oled_center)    oled_holder_cutouts();
         usb_tower_cutouts();
