@@ -28,7 +28,7 @@ $fn = 64;
 // ============================================================
 
 /* [Export] */
-export_part = "button_cap"; // [preview, front_insert, carrier, mic_switch_plug, led_button_plug, switch_cap, button_cap]
+export_part = "carrier"; // [preview, front_insert, carrier, mic_switch_plug, led_button_plug, switch_cap, button_cap]
 
 /* [Anzeige (nur Vorschau)] */
 show_case_reference = false;   // Gehäuse als Referenz (wird nie gedruckt)
