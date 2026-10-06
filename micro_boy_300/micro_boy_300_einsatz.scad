@@ -28,10 +28,10 @@ $fn = 64;
 // ============================================================
 
 /* [Export] */
-export_part = "button_cap"; // [preview, front_insert, carrier, mic_switch_plug, led_button_plug, switch_cap, button_cap]
+export_part = "preview"; // [preview, front_insert, carrier, mic_switch_plug, led_button_plug, switch_cap, button_cap]
 
 /* [Anzeige (nur Vorschau)] */
-show_case_reference = false;   // Gehäuse als Referenz (wird nie gedruckt)
+show_case_reference = true;   // Gehäuse als Referenz (wird nie gedruckt)
 show_front_insert   = true;
 show_carrier        = true;
 show_side_plugs     = true;
@@ -88,6 +88,7 @@ window_width              = 47.36;
 window_distance_from_left = 5;
 window_distance_from_top  = 10.9;
 window_height             = 7.8;
+window_mask_overlap       = 1;
 // Ausguck hat eine durchsichtige Scheibe, gegen die der OLED-Halter drückt.
 
 /* [Lautsprechergitter] */
@@ -95,8 +96,8 @@ speaker_grille_diameter            = 51;
 speaker_grille_distance_from_floor = 5.3;
 
 /* [Lautsprecher-Modul 3 W 4 Ohm] */
-speaker_length           = 28;
-speaker_width            = 30.95;
+speaker_length           = 30.95;
+speaker_width            = 28;
 speaker_depth            = 15.2;
 speaker_offset_on_grille = [0, 0];  // Feinjustage gegenüber der Gittermitte
 speaker_tab_length                  = 7.5;
@@ -106,6 +107,7 @@ speaker_tab_front_offset            = 6.7;
 speaker_tab_hole_distance_from_end  = 3.75;
 speaker_tab_screw_pilot_d           = 1.8;
 speaker_tab_screw_depth             = 5;
+speaker_cable_notch_width           = 6;
 
 /* [Lautsprecher-Halter] */
 speaker_fit_tolerance = 0.2;   // Spiel pro Seite – klein halten, sitzt dann stramm
@@ -128,7 +130,7 @@ oled_pins_on_left     = true;   // Stiftleiste zeigt nach links (-X)
 oled_offset_in_window = [-2.3, 0.6]; // Feinjustage gegenüber der Ausguck-Mitte
 
 /* [OLED-Halter] */
-oled_fit_tolerance     = 0.2;   // Spiel pro Seite
+oled_fit_tolerance     = 0.3;   // Spiel pro Seite
 oled_holder_wall       = 1.6;
 oled_front_lip         = 0.8;   // Rahmen vor dem Glas, hält das Modul nach vorne
 oled_view_margin       = 0.8;   // Sichtfenster so viel größer als die Leuchtfläche
@@ -280,10 +282,12 @@ speaker_holder_width  = speaker_slot_width  + 2 * speaker_holder_wall;
 speaker_sound_opening = [speaker_slot_length - 2 * speaker_lip_overlap,
                          speaker_slot_width  - 2 * speaker_lip_overlap];
 speaker_back_z        = speaker_lip_overlap + speaker_depth;
-speaker_tab_slot_size = [speaker_tab_width + 2 * speaker_fit_tolerance,
-                         speaker_slot_width + 2 * (speaker_tab_length + speaker_fit_tolerance)];
+speaker_tab_slot_size = [speaker_slot_length + 2 * (speaker_tab_length + speaker_fit_tolerance),
+                         speaker_tab_width + 2 * speaker_fit_tolerance];
 speaker_tab_floor_z   = speaker_lip_overlap + speaker_tab_front_offset - speaker_fit_tolerance;
-speaker_tab_hole_offset_y = speaker_width / 2 + speaker_tab_length - speaker_tab_hole_distance_from_end;
+speaker_tab_hole_offset_x = speaker_length / 2 + speaker_tab_length - speaker_tab_hole_distance_from_end;
+speaker_footprint_size = [max(speaker_slot_length, speaker_tab_slot_size.x),
+                          max(speaker_slot_width,  speaker_tab_slot_size.y)];
 
 // OLED-Halter
 oled_center        = window_center + oled_offset_in_window;
@@ -303,7 +307,7 @@ esp_top_y      = case_inner_height - buckle_protrusion - wall_clearance - esp_ga
 esp_center     = [esp_center_x, esp_top_y - esp_board_length / 2];
 esp_board_z    = max(carrier_back_z, speaker_back_z + esp_gap_above_speaker) + esp_header_below;
 esp_top_z      = esp_board_z + esp_board_thickness + esp_module_height;
-esp_platform_y_start = speaker_center.y + speaker_tab_slot_size.y / 2 + 1.5;
+esp_platform_y_start = speaker_center.y + speaker_footprint_size.y / 2 + 1.5;
 esp_platform_y_end   = esp_top_y - 1;
 esp_platform_size    = [esp_board_width - 2 * esp_platform_inset,
                         esp_platform_y_end - esp_platform_y_start];
@@ -579,10 +583,13 @@ module speaker_holder_cutouts() {
     translate([0, 0, speaker_lip_overlap - 0.01])
         cube([speaker_slot_length, speaker_slot_width, carrier_back_z + 1], anchor = BOTTOM);
     translate([0, 0, speaker_tab_floor_z])
-        cube([speaker_tab_slot_size.x, speaker_tab_slot_size.y, carrier_back_z + 1], anchor = BOTTOM);
+        cube([speaker_tab_slot_size.x, speaker_tab_slot_size.y, plate_back_z - speaker_tab_floor_z + 0.01],
+             anchor = BOTTOM);
     for (side = [-1, 1])
-        translate([0, side * speaker_tab_hole_offset_y, speaker_tab_floor_z - speaker_tab_screw_depth])
+        translate([side * speaker_tab_hole_offset_x, 0, speaker_tab_floor_z - speaker_tab_screw_depth])
             cylinder(d = speaker_tab_screw_pilot_d, h = speaker_tab_screw_depth + 0.01);
+    translate([0, -speaker_slot_width / 2 + 0.01, speaker_lip_overlap])
+        cube([speaker_cable_notch_width, speaker_holder_wall + 3, carrier_back_z + 1], anchor = BOTTOM + BACK);
 }
 
 module speaker_dummy() {
@@ -591,7 +598,7 @@ module speaker_dummy() {
             cube([speaker_length, speaker_width, speaker_depth], anchor = BOTTOM);
     color("DimGray")
         translate([0, 0, speaker_lip_overlap + speaker_tab_front_offset])
-            cube([speaker_tab_width, speaker_width + 2 * speaker_tab_length, speaker_tab_thickness], anchor = BOTTOM);
+            cube([speaker_length + 2 * speaker_tab_length, speaker_tab_width, speaker_tab_thickness], anchor = BOTTOM);
     color("Black")
         translate([0, 0, speaker_lip_overlap - 0.05])
             cylinder(d = min(speaker_length, speaker_width) - 4, h = 0.1);
@@ -636,9 +643,9 @@ module oled_holder_cutouts() {
                   oled_slot_width - 2 * oled_back_ledge,
                   oled_back_relief_depth]);
         // Kabelkanal: von der Stiftleiste durch Halter, Platte und Träger bis zum Rand
-        translate([cable_start_x, -oled_slot_width / 2, -1])
+        translate([cable_start_x, -oled_slot_width / 2, oled_front_lip])
             cube([pin_end_x + oled_pin_zone_length - cable_start_x,
-                  oled_slot_width, carrier_back_z + 2]);
+                  oled_slot_width, carrier_back_z + 1 - oled_front_lip]);
     }
 }
 
@@ -672,6 +679,10 @@ module front_insert() {
             layer_outline(plate_z, plate_thickness);
             at(speaker_center) speaker_holder_body();
             at(oled_center)    oled_holder_body();
+            translate([window_distance_from_left - window_mask_overlap,
+                       window_center.y - window_height / 2 - window_mask_overlap, 0])
+                cube([window_width + 2 * window_mask_overlap,
+                      window_height + 2 * window_mask_overlap, oled_holder_depth + 0.5]);
             for (p = lower_boss_positions)
                 at(p) translate([0, 0, lower_boss_height])
                     cylinder(d = lower_boss_outer_d, h = plate_z - lower_boss_height + 0.01);
@@ -849,9 +860,9 @@ module led_cutouts() {
 }
 
 module behind_front_inner_face() {
-    intersection() {
+    difference() {
         children();
-        translate([0, 0, -side_opening_center_z]) cube(200, anchor = BOTTOM);
+        translate([0, 0, -side_opening_center_z]) cube(100, anchor = TOP);
     }
 }
 
