@@ -33,7 +33,7 @@ export_part = "preview"; // [preview, front_insert, carrier, mic_switch_plug, le
 /* [Anzeige (nur Vorschau)] */
 show_case_reference = true;   // Gehäuse als Referenz (wird nie gedruckt)
 show_front_insert   = true;
-show_carrier        = true;
+show_carrier        = false;
 show_side_plugs     = true;
 show_dummies        = true;   // Bauteile als Platzhalter
 
