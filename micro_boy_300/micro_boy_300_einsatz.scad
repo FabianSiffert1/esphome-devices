@@ -131,6 +131,7 @@ oled_offset_in_window = [-2.3, 0.6]; // Feinjustage gegenüber der Ausguck-Mitte
 
 /* [OLED-Halter] */
 oled_fit_tolerance     = 0.3;   // Spiel pro Seite
+oled_slot_extra_height = 0.2;
 oled_holder_wall       = 1.6;
 oled_front_lip         = 0.8;   // Rahmen vor dem Glas, hält das Modul nach vorne
 oled_view_margin       = 0.8;   // Sichtfenster so viel größer als die Leuchtfläche
@@ -292,8 +293,8 @@ speaker_footprint_size = [max(speaker_slot_length, speaker_tab_slot_size.x),
 // OLED-Halter
 oled_center        = window_center + oled_offset_in_window;
 oled_slot_length   = oled_pcb_length + 2 * oled_fit_tolerance;
-oled_slot_width    = oled_pcb_width  + 2 * oled_fit_tolerance;
-oled_stack_depth   = oled_glass_thickness + oled_pcb_thickness + oled_fit_tolerance;
+oled_slot_width    = oled_pcb_width  + 2 * oled_fit_tolerance + oled_slot_extra_height;
+oled_stack_depth   = oled_glass_thickness + oled_pcb_thickness + 2 * oled_fit_tolerance;
 oled_holder_length = oled_slot_length + 2 * oled_holder_wall;
 oled_holder_width  = oled_slot_width  + 2 * oled_holder_wall;
 oled_holder_depth  = plate_z;   // reicht von der Front bis an die Platte
