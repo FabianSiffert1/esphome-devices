@@ -28,7 +28,7 @@ $fn = 64;
 // ============================================================
 
 /* [Export] */
-export_part = "preview"; // [preview, front_insert, carrier, mic_switch_plug, led_button_plug, switch_cap, button_cap]
+export_part = "front_insert"; // [preview, front_insert, carrier, mic_switch_plug, led_button_plug, switch_cap, button_cap]
 
 /* [Anzeige (nur Vorschau)] */
 show_case_reference = true;   // Gehäuse als Referenz (wird nie gedruckt)
@@ -96,8 +96,8 @@ speaker_grille_diameter            = 51;
 speaker_grille_distance_from_floor = 5.3;
 
 /* [Lautsprecher-Modul 3 W 4 Ohm] */
-speaker_length           = 30.95;
-speaker_width            = 28;
+speaker_length           = 28;
+speaker_width            = 30.95;
 speaker_depth            = 15.2;
 speaker_offset_on_grille = [0, 0];  // Feinjustage gegenüber der Gittermitte
 speaker_tab_length                  = 7.5;
